@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>雙手手勢控制接球遊戲</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tensorflow/4.20.0/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Arial', sans-serif;
+            color: white;
+            overflow: hidden;
+        }
+        
+        .game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .ui-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .score {
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        .game-canvas {
+            border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        
+        .video-container {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 200px;
+            height: 150px;
+            border: 2px solid rgba(255,255,255,0.5);
+            border-radius: 10px;
+            overflow: hidden;
+            z-index: 50;
+        }
+        
+        .camera-feed {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+        
+        .setup-screen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            z-index: 200;
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255,255,255,0.2);
+        }
+        
+        .setup-screen h2 {
+            margin-bottom: 30px;
+            color: #ffd93d;
+        }
+        
+        .item-config {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin: 30px 0;
+        }
+        
+        .item-type {
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-radius: 10px;
+            border: 2px solid rgba(255,255,255,0.2);
+        }
+        
+        .item-type h4 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+        }
+        
+        .item-preview {
+            width: 60px;
+            height: 60px;
+            border: 2px dashed rgba(255,255,255,0.5);
+            border-radius: 50%;
+            margin: 10px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-size: cover;
+            background-position: center;
+            overflow: hidden;
+        }
+        
+        .upload-btn {
+            padding: 8px 15px;
+            background: #4ecdc4;
+            border: none;
+            border-radius: 20px;
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        
+        .start-button {
+            padding: 15px 30px;
+            font-size: 18px;
+            background: linear-gradient(45deg, #ff6b6b, #ffd93d);
+            border: none;
+            border-radius: 25px;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            transition: all 0.3s ease;
+            margin-top: 20px;
+        }
+        
+        .start-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+        }
+        
+        .instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            font-size: 14px;
+            opacity: 0.8;
+            z-index: 100;
+        }
+        
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: rgba(0,0,0,0.8);
+            padding: 30px;
+            border-radius: 15px;
+            z-index: 300;
+            display: none;
+        }
+        
+        .game-over h2 {
+            margin: 0 0 20px 0;
+            color: #ff6b6b;
+        }
+        
+        .restart-btn {
+            padding: 10px 20px;
+            background: #4ecdc4;
+            border: none;
+            border-radius: 15px;
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        
+        .hand-indicator {
+            position: absolute;
+            bottom: 100px;
+            display: flex;
+            gap: 50px;
+            z-index: 100;
+        }
+        
+        .hand-status {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-size: 14px;
+        }
+        
+        .hand-dot {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-bottom: 5px;
+            border: 2px solid rgba(255,255,255,0.3);
+            transition: all 0.3s ease;
+        }
+        
+        .hand-dot.active {
+            background: #4ecdc4;
+            border-color: #4ecdc4;
+            box-shadow: 0 0 15px #4ecdc4;
+        }
+        
+        .file-input {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="ui-panel">
+            <div class="score">分數: <span id="score">0</span></div>
+            <div class="score">生命: <span id="lives">3</span></div>
+            <div class="score">時間: <span id="time">0</span>s</div>
+        </div>
+        
+        <canvas id="gameCanvas" class="game-canvas" width="800" height="600"></canvas>
+        
+        <div class="video-container">
+            <video id="cameraFeed" class="camera-feed" autoplay muted playsinline></video>
+        </div>
+        
+        <div id="setupScreen" class="setup-screen">
+            <h2>遊戲設定</h2>
+            <p>自定義物品圖片 (可選)</p>
+            
+            <div class="item-config">
+                <div class="item-type">
+                    <h4>好球 (+10分)</h4>
+                    <div id="preview1" class="item-preview">🎾</div>
+                    <button class="upload-btn" onclick="document.getElementById('file1').click()">上傳圖片</button>
+                    <input type="file" id="file1" class="file-input" accept="image/*">
+                </div>
+                
+                <div class="item-type">
+                    <h4>超級球 (+20分)</h4>
+                    <div id="preview2" class="item-preview">⭐</div>
+                    <button class="upload-btn" onclick="document.getElementById('file2').click()">上傳圖片</button>
+                    <input type="file" id="file2" class="file-input" accept="image/*">
+                </div>
+                
+                <div class="item-type">
+                    <h4>壞球 (-10分)</h4>
+                    <div id="preview3" class="item-preview">💣</div>
+                    <button class="upload-btn" onclick="document.getElementById('file3').click()">上傳圖片</button>
+                    <input type="file" id="file3" class="file-input" accept="image/*">
+                </div>
+                
+                <div class="item-type">
+                    <h4>炸彈 (-1生命)</h4>
+                    <div id="preview4" class="item-preview">☠️</div>
+                    <button class="upload-btn" onclick="document.getElementById('file4').click()">上傳圖片</button>
+                    <input type="file" id="file4" class="file-input" accept="image/*">
+                </div>
+            </div>
+            
+            <button id="startBtn" class="start-button">開始遊戲</button>
+        </div>
+        
+        <div class="hand-indicator">
+            <div class="hand-status">
+                <div id="leftHand" class="hand-dot"></div>
+                <span>左手</span>
+            </div>
+            <div class="hand-status">
+                <div id="rightHand" class="hand-dot"></div>
+                <span>右手</span>
+            </div>
+        </div>
+        
+        <div class="instructions">
+            使用左右手來接球！綠球和星星得分，紅球和炸彈扣分。雙手操作更有優勢！
+        </div>
+        
+        <div id="gameOver" class="game-over">
+            <h2>遊戲結束！</h2>
+            <p>最終分數: <span id="finalScore">0</span></p>
+            <button id="restartBtn" class="restart-btn">重新開始</button>
+        </div>
+    </div>
+    
+    <script>
+        class GestureGame {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.video = document.getElementById('cameraFeed');
+                
+                // 遊戲狀態
+                this.gameState = 'setup'; // setup, playing, gameOver
+                this.score = 0;
+                this.lives = 3;
+                this.gameTime = 0;
+                this.startTime = 0;
+                
+                // 雙手追蹤
+                this.hands = null;
+                this.camera = null;
+                this.leftHand = { x: 200, y: 300, detected: false };
+                this.rightHand = { x: 600, y: 300, detected: false };
+                
+                // 自定義圖片
+                this.itemImages = {
+                    type1: null, // 好球 +10
+                    type2: null, // 超級球 +20
+                    type3: null, // 壞球 -10
+                    type4: null  // 炸彈 -1生命
+                };
+                
+                // 遊戲物件
+                this.items = [];
+                this.particles = [];
+                
+                // 物品類型配置
+                this.itemTypes = {
+                    type1: { score: 10, color: '#4ecdc4', emoji: '🎾', name: '好球' },
+                    type2: { score: 20, color: '#ffd93d', emoji: '⭐', name: '超級球' },
+                    type3: { score: -10, color: '#ff6b6b', emoji: '💣', name: '壞球' },
+                    type4: { score: 0, lives: -1, color: '#8b0000', emoji: '☠️', name: '炸彈' }
+                };
+                
+                // 音效上下文
+                this.audioContext = null;
+                
+                this.init();
+            }
+            
+            async init() {
+                await this.setupCamera();
+                await this.setupHandTracking();
+                this.setupAudio();
+                this.setupEventListeners();
+                this.setupImageUploads();
+                this.gameLoop();
+            }
+            
+            async setupCamera() {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            width: 640,
+                            height: 480,
+                            facingMode: 'user'
+                        }
+                    });
+                    this.video.srcObject = stream;
+                    await new Promise(resolve => {
+                        this.video.onloadedmetadata = resolve;
+                    });
+                } catch (error) {
+                    console.error('攝像頭設置失敗:', error);
+                    alert('請允許使用攝像頭以開始遊戲');
+                }
+            }
+            
+            async setupHandTracking() {
+                this.hands = new Hands({
+                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+                });
+                
+                this.hands.setOptions({
+                    maxNumHands: 2, // 支援雙手
+                    modelComplexity: 1,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+                
+                this.hands.onResults((results) => {
+                    this.processHandResults(results);
+                });
+                
+                this.camera = new Camera(this.video, {
+                    onFrame: async () => {
+                        if (this.hands) {
+                            await this.hands.send({ image: this.video });
+                        }
+                    },
+                    width: 640,
+                    height: 480
+                });
+                
+                this.camera.start();
+            }
+            
+            processHandResults(results) {
+                // 重置手部檢測狀態
+                this.leftHand.detected = false;
+                this.rightHand.detected = false;
+                
+                if (results.multiHandLandmarks && results.multiHandedness) {
+                    for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+                        const landmarks = results.multiHandLandmarks[i];
+                        const handedness = results.multiHandedness[i];
+                        
+                        // 使用手掌中心點 (landmark 9)
+                        const palmCenter = landmarks[9];
+                        const x = (1 - palmCenter.x) * this.canvas.width;
+                        const y = palmCenter.y * this.canvas.height;
+                        
+                        // 判斷左右手 (注意鏡像效果)
+                        const label = handedness.label;
+                        if (label === 'Right') { // 實際上是左手 (因為鏡像)
+                            this.leftHand.x = x;
+                            this.leftHand.y = y;
+                            this.leftHand.detected = true;
+                        } else if (label === 'Left') { // 實際上是右手 (因為鏡像)
+                            this.rightHand.x = x;
+                            this.rightHand.y = y;
+                            this.rightHand.detected = true;
+                        }
+                    }
+                }
+                
+                // 更新手部指示器
+                document.getElementById('leftHand').classList.toggle('active', this.leftHand.detected);
+                document.getElementById('rightHand').classList.toggle('active', this.rightHand.detected);
+            }
+            
+            setupAudio() {
+                try {
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (error) {
+                    console.log('音效設置失敗:', error);
+                }
+            }
+            
+            setupImageUploads() {
+                for (let i = 1; i <= 4; i++) {
+                    const fileInput = document.getElementById(`file${i}`);
+                    const preview = document.getElementById(`preview${i}`);
+                    
+                    fileInput.addEventListener('change', (event) => {
+                        const file = event.target.files[0];
+                        if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (e) => {
+                                const img = new Image();
+                                img.onload = () => {
+                                    this.itemImages[`type${i}`] = img;
+                                    preview.style.backgroundImage = `url(${e.target.result})`;
+                                    preview.textContent = '';
+                                };
+                                img.src = e.target.result;
+                            };
+                            reader.readAsDataURL(file);
+                        }
+                    });
+                }
+            }
+            
+            playSound(frequency, duration, type = 'sine') {
+                if (!this.audioContext) return;
+                
+                const oscillator = this.audioContext.createOscillator();
+                const gainNode = this.audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(this.audioContext.destination);
+                
+                oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
+                oscillator.type = type;
+                
+                gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration);
+                
+                oscillator.start(this.audioContext.currentTime);
+                oscillator.stop(this.audioContext.currentTime + duration);
+            }
+            
+            setupEventListeners() {
+                document.getElementById('startBtn').addEventListener('click', () => {
+                    this.startGame();
+                });
+                
+                document.getElementById('restartBtn').addEventListener('click', () => {
+                    this.restartGame();
+                });
+            }
+            
+            startGame() {
+                if (this.audioContext && this.audioContext.state === 'suspended') {
+                    this.audioContext.resume();
+                }
+                
+                this.gameState = 'playing';
+                this.score = 0;
+                this.lives = 3;
+                this.startTime = Date.now();
+                this.items = [];
+                this.particles = [];
+                
+                document.getElementById('setupScreen').style.display = 'none';
+                document.getElementById('gameOver').style.display = 'none';
+                
+                this.spawnItems();
+            }
+            
+            restartGame() {
+                this.gameState = 'setup';
+                document.getElementById('setupScreen').style.display = 'block';
+                document.getElementById('gameOver').style.display = 'none';
+            }
+            
+            spawnItems() {
+                if (this.gameState !== 'playing') return;
+                
+                const x = Math.random() * (this.canvas.width - 60) + 30;
+                
+                // 隨機選擇物品類型
+                const types = ['type1', 'type1', 'type1', 'type2', 'type3', 'type4']; // type1 機率較高
+                const randomType = types[Math.floor(Math.random() * types.length)];
+                const config = this.itemTypes[randomType];
+                
+                this.items.push({
+                    x: x,
+                    y: -30,
+                    radius: 30,
+                    speed: 1.5 + Math.random() * 2.5,
+                    type: randomType,
+                    config: config,
+                    rotation: 0
+                });
+                
+                // 根據時間調整生成間隔
+                const interval = Math.max(1000 - (this.gameTime * 15), 400);
+                setTimeout(() => this.spawnItems(), interval);
+            }
+            
+            update() {
+                if (this.gameState !== 'playing') return;
+                
+                this.gameTime = Math.floor((Date.now() - this.startTime) / 1000);
+                
+                // 更新物品
+                for (let i = this.items.length - 1; i >= 0; i--) {
+                    const item = this.items[i];
+                    item.y += item.speed;
+                    item.rotation += 0.05;
+                    
+                    // 檢查與左手碰撞
+                    if (this.leftHand.detected && this.checkCollision(item, this.leftHand, 50)) {
+                        this.handleItemCollection(item, i);
+                        continue;
+                    }
+                    
+                    // 檢查與右手碰撞
+                    if (this.rightHand.detected && this.checkCollision(item, this.rightHand, 50)) {
+                        this.handleItemCollection(item, i);
+                        continue;
+                    }
+                    
+                    // 移除超出畫面的物品
+                    if (item.y > this.canvas.height + 50) {
+                        // 錯過好球和超級球會扣生命
+                        if (item.type === 'type1' || item.type === 'type2') {
+                            this.lives--;
+                            this.createParticles(item.x, this.canvas.height - 50, 'Missed!', '#ff6b6b');
+                        }
+                        this.items.splice(i, 1);
+                    }
+                }
+                
+                // 更新粒子效果
+                for (let i = this.particles.length - 1; i >= 0; i--) {
+                    const particle = this.particles[i];
+                    particle.life--;
+                    particle.y -= 2;
+                    particle.opacity = particle.life / 60;
+                    
+                    if (particle.life <= 0) {
+                        this.particles.splice(i, 1);
+                    }
+                }
+                
+                // 檢查遊戲結束
+                if (this.lives <= 0) {
+                    this.endGame();
+                }
+                
+                this.updateUI();
+            }
+            
+            handleItemCollection(item, index) {
+                const config = item.config;
+                
+                // 更新分數
+                if (config.score) {
+                    this.score += config.score;
+                    this.createParticles(item.x, item.y, 
+                        config.score > 0 ? `+${config.score}` : `${config.score}`, 
+                        config.color);
+                }
+                
+                // 更新生命
+                if (config.lives) {
+                    this.lives += config.lives;
+                    this.createParticles(item.x, item.y, `-1 Life`, '#ff6b6b');
+                }
+                
+                // 播放音效
+                if (config.score > 0) {
+                    this.playSound(800 + (config.score * 20), 0.2);
+                } else {
+                    this.playSound(200, 0.5, 'square');
+                }
+                
+                this.items.splice(index, 1);
+            }
+            
+            checkCollision(item, hand, handRadius) {
+                const dx = item.x - hand.x;
+                const dy = item.y - hand.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                return distance < (item.radius + handRadius);
+            }
+            
+            createParticles(x, y, text, color) {
+                this.particles.push({
+                    x: x,
+                    y: y,
+                    text: text,
+                    color: color,
+                    life: 60,
+                    opacity: 1
+                });
+            }
+            
+            render() {
+                // 清除畫布
+                this.ctx.fillStyle = 'rgba(30, 30, 50, 0.3)';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // 繪製物品
+                this.items.forEach(item => {
+                    this.ctx.save();
+                    this.ctx.translate(item.x, item.y);
+                    this.ctx.rotate(item.rotation);
+                    
+                    // 如果有自定義圖片則使用圖片，否則使用預設樣式
+                    if (this.itemImages[item.type]) {
+                        this.ctx.drawImage(
+                            this.itemImages[item.type], 
+                            -item.radius, -item.radius, 
+                            item.radius * 2, item.radius * 2
+                        );
+                    } else {
+                        // 預設樣式
+                        this.ctx.beginPath();
+                        this.ctx.arc(0, 0, item.radius, 0, Math.PI * 2);
+                        this.ctx.fillStyle = item.config.color;
+                        this.ctx.fill();
+                        this.ctx.strokeStyle = 'white';
+                        this.ctx.lineWidth = 3;
+                        this.ctx.stroke();
+                        
+                        // 添加 emoji
+                        this.ctx.font = '30px Arial';
+                        this.ctx.textAlign = 'center';
+                        this.ctx.textBaseline = 'middle';
+                        this.ctx.fillText(item.config.emoji, 0, 0);
+                    }
+                    
+                    this.ctx.restore();
+                    
+                    // 發光效果
+                    this.ctx.shadowColor = item.config.color;
+                    this.ctx.shadowBlur = 15;
+                    this.ctx.beginPath();
+                    this.ctx.arc(item.x, item.y, item.radius, 0, Math.PI * 2);
+                    this.ctx.fillStyle = 'transparent';
+                    this.ctx.fill();
+                    this.ctx.shadowBlur = 0;
+                });
+                
+                // 繪製左手
+                if (this.leftHand.detected) {
+                    this.ctx.beginPath();
+                    this.ctx.arc(this.leftHand.x, this.leftHand.y, 50, 0, Math.PI * 2);
+                    this.ctx.fillStyle = 'rgba(76, 205, 196, 0.3)';
+                    this.ctx.fill();
+                    this.ctx.strokeStyle = '#4ecdc4';
+                    this.ctx.lineWidth = 3;
+                    this.ctx.stroke();
+                    
+                    // 手部中心點
+                    this.ctx.beginPath();
+                    this.ctx.arc(this.leftHand.x, this.leftHand.y, 8, 0, Math.PI * 2);
+                    this.ctx.fillStyle = '#4ecdc4';
+                    this.ctx.fill();
+                }
+                
+                // 繪製右手
+                if (this.rightHand.detected) {
+                    this.ctx.beginPath();
+                    this.ctx.arc(this.rightHand.x, this.rightHand.y, 50, 0, Math.PI * 2);
+                    this.ctx.fillStyle = 'rgba(255, 217, 61, 0.3)';
+                    this.ctx.fill();
+                    this.ctx.strokeStyle = '#ffd93d';
+                    this.ctx.lineWidth = 3;
+                    this.ctx.stroke();
+                    
+                    // 手部中心點
+                    this.ctx.beginPath();
+                    this.ctx.arc(this.rightHand.x, this.rightHand.y, 8, 0, Math.PI * 2);
+                    this.ctx.fillStyle = '#ffd93d';
+                    this.ctx.fill();
+                }
+                
+                // 繪製粒子效果
+                this.particles.forEach(particle => {
+                    this.ctx.save();
+                    this.ctx.globalAlpha = particle.opacity;
+                    this.ctx.fillStyle = particle.color;
+                    this.ctx.font = 'bold 20px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText(particle.text, particle.x, particle.y);
+                    this.ctx.restore();
+                });
+                
+                // 如果沒有檢測到手部，顯示提示
+                if (!this.leftHand.detected && !this.rightHand.detected && this.gameState === 'playing') {
+                    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                    this.ctx.font = 'bold 24px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('請將雙手對準攝像頭', this.canvas.width / 2, this.canvas.height / 2);
+                }
+            }
+            
+            updateUI() {
+                document.getElementById('score').textContent = this.score;
+                document.getElementById('lives').textContent = this.lives;
+                document.getElementById('time').textContent = this.gameTime;
+            }
+            
+            endGame() {
+                this.gameState = 'gameOver';
+                document.getElementById('finalScore').textContent = this.score;
+                document.getElementById('gameOver').style.display = 'block';
+                this.playSound(100, 1, 'square');
+            }
+            
+            gameLoop() {
+                this.update();
+                this.render();
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+        
+        // 啟動遊戲
+        window.addEventListener('load', () => {
+            new GestureGame();
+        });
+    </script>
+</body>
+</html>
