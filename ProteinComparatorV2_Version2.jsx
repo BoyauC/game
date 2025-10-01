@@ -1,0 +1,403 @@
+import React, { useState } from 'react';
+import { Camera, X, TrendingDown, Award, Database, CheckCircle, AlertCircle, Settings } from 'lucide-react';
+
+export default function ProteinComparatorV2() {
+  const [products, setProducts] = useState([]);
+  const [formData, setFormData] = useState({
+    price: '',
+    weight: '',
+    proteinPer100g: '',
+    image: null,
+    imagePreview: null
+  });
+  const [appsScriptUrl, setAppsScriptUrl] = useState('');
+  const [saveStatus, setSaveStatus] = useState('');
+  const [showSetup, setShowSetup] = useState(true);
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => ({
+          ...prev,
+          image: file,
+          imagePreview: reader.result
+        }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const calculatePricePerGramProtein = (price, weight, proteinPer100g) => {
+    const totalProtein = (weight / 100) * proteinPer100g;
+    return (price / totalProtein).toFixed(2);
+  };
+
+  const sendToGoogleSheets = async (productData) => {
+    if (!appsScriptUrl) {
+      setSaveStatus('⚠️ 請先設定 Google Apps Script URL');
+      return false;
+    }
+
+    try {
+      setSaveStatus('💾 儲存中...');
+
+      await fetch(appsScriptUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          timestamp: new Date().toLocaleString('zh-TW'),
+          price: productData.price,
+          weight: productData.weight,
+          proteinPer100g: productData.proteinPer100g,
+          totalProtein: productData.totalProtein,
+          pricePerGramProtein: productData.pricePerGramProtein,
+          imageData: productData.imagePreview || ''
+        })
+      });
+
+      setSaveStatus('✅ 已成功儲存到 Google Sheets！');
+      setTimeout(() => setSaveStatus(''), 3000);
+      return true;
+    } catch (error) {
+      console.error('儲存失敗:', error);
+      setSaveStatus('❌ 儲存失敗，請檢查 URL 設定');
+      setTimeout(() => setSaveStatus(''), 5000);
+      return false;
+    }
+  };
+
+  const handleAddProduct = async () => {
+    if (!formData.price || !formData.weight || !formData.proteinPer100g) {
+      alert('⚠️ 請填寫所有必填欄位（價格、重量、蛋白質含量）');
+      return;
+    }
+
+    const pricePerGramProtein = calculatePricePerGramProtein(
+      parseFloat(formData.price),
+      parseFloat(formData.weight),
+      parseFloat(formData.proteinPer100g)
+    );
+
+    const newProduct = {
+      id: Date.now(),
+      price: parseFloat(formData.price),
+      weight: parseFloat(formData.weight),
+      proteinPer100g: parseFloat(formData.proteinPer100g),
+      imagePreview: formData.imagePreview,
+      pricePerGramProtein: parseFloat(pricePerGramProtein),
+      totalProtein: ((parseFloat(formData.weight) / 100) * parseFloat(formData.proteinPer100g)).toFixed(1)
+    };
+
+    // 儲存到 Google Sheets
+    await sendToGoogleSheets(newProduct);
+
+    // 顯示在本地列表中
+    setProducts(prev => [...prev, newProduct].sort((a, b) => a.pricePerGramProtein - b.pricePerGramProtein));
+
+    // 清空表單
+    setFormData({
+      price: '',
+      weight: '',
+      proteinPer100g: '',
+      image: null,
+      imagePreview: null
+    });
+  };
+
+  const handleDeleteProduct = (id) => {
+    setProducts(prev => prev.filter(p => p.id !== id));
+  };
+
+  const getBestValueBadge = (index) => {
+    if (index === 0 && products.length > 0) {
+      return (
+        <div className="absolute top-2 right-2 bg-yellow-400 text-yellow-900 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-lg z-10">
+          <Award size={14} />
+          最佳CP值
+        </div>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-4">
+      <div className="max-w-6xl mx-auto">
+        {/* 標題區 */}
+        <div className="text-center mb-6">
+          <h1 className="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600 mb-2">
+            🥩 蛋白質價值比較器 V2
+          </h1>
+          <p className="text-indigo-600 font-medium">智慧比較 × Google Sheets 雲端儲存</p>
+        </div>
+
+        {/* Google Apps Script 設定區 */}
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border-2 border-green-200">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-green-100 p-2 rounded-lg">
+                <Database className="text-green-600" size={24} />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">Google Sheets 雲端儲存</h2>
+                <p className="text-sm text-gray-500">設定後資料永久保存</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowSetup(!showSetup)}
+              className="flex items-center gap-2 text-green-600 hover:text-green-700 font-medium text-sm bg-green-50 px-4 py-2 rounded-lg transition"
+            >
+              <Settings size={16} />
+              {showSetup ? '收起' : '展開'}
+            </button>
+          </div>
+
+          {showSetup && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  📍 Google Apps Script Web App URL
+                </label>
+                <input
+                  type="text"
+                  value={appsScriptUrl}
+                  onChange={(e) => setAppsScriptUrl(e.target.value)}
+                  placeholder="https://script.google.com/macros/s/AKfycbxQ-07HyTp4Fm0msbyqPSI9zUOlCueTHOZFnJB7-jYH67k6-tHwtoI9lOXwDGXpWp_y/exec"
+                  className="w-full px-4 py-3 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none text-sm"
+                />
+              </div>
+
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-5 border border-blue-200">
+                <p className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                  <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">?</span>
+                  快速設定指南
+                </p>
+                <ol className="space-y-2 text-sm text-gray-700">
+                  <li className="flex gap-2">
+                    <span className="font-bold text-indigo-600">1.</span>
+                    <span>建立新的 <a href="https://sheets.google.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline font-medium">Google Sheets</a></span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="font-bold text-indigo-600">2.</span>
+                    <span>點選 <strong>擴充功能</strong> → <strong>Apps Script</strong></span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="font-bold text-indigo-600">3.</span>
+                    <span>貼上下方程式碼並儲存</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="font-bold text-indigo-600">4.</span>
+                    <span>點選 <strong>部署</strong> → <strong>新增部署作業</strong> → 選擇 <strong>Web 應用程式</strong></span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="font-bold text-indigo-600">5.</span>
+                    <span>存取權選擇「任何人」，複製產生的 URL 並貼到上方</span>
+                  </li>
+                </ol>
+              </div>
+
+              {saveStatus && (
+                <div className={`flex items-center gap-3 p-4 rounded-lg font-medium ${
+                  saveStatus.includes('✅') ? 'bg-green-100 text-green-800 border border-green-300' :
+                  saveStatus.includes('❌') ? 'bg-red-100 text-red-800 border border-red-300' :
+                  saveStatus.includes('⚠️') ? 'bg-yellow-100 text-yellow-800 border border-yellow-300' :
+                  'bg-blue-100 text-blue-800 border border-blue-300'
+                }`}>
+                  {saveStatus.includes('✅') ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
+                  <span>{saveStatus}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 產品輸入表單 */}
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+          <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+            <span className="bg-indigo-100 p-2 rounded-lg">📝</span>
+            新增產品資料
+          </h2>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* 左側：圖片上傳 */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                📸 產品照片（選填）
+              </label>
+              <div className="relative">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                  id="imageUpload"
+                />
+                <label
+                  htmlFor="imageUpload"
+                  className="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed border-indigo-300 rounded-xl cursor-pointer bg-gradient-to-br from-indigo-50 to-purple-50 hover:shadow-lg transition"
+                >
+                  {formData.imagePreview ? (
+                    <img
+                      src={formData.imagePreview}
+                      alt="Preview"
+                      className="w-full h-full object-cover rounded-xl"
+                    />
+                  ) : (
+                    <div className="text-center p-4">
+                      <Camera size={48} className="mx-auto text-indigo-400 mb-3" />
+                      <p className="text-indigo-600 font-medium">點擊上傳產品照片</p>
+                      <p className="text-sm text-indigo-400 mt-2">支援 JPG、PNG 格式</p>
+                    </div>
+                  )}
+                </label>
+              </div>
+            </div>
+
+            {/* 右側：產品資訊 */}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  💰 產品價格 (元) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  name="price"
+                  value={formData.price}
+                  onChange={handleInputChange}
+                  placeholder="例如：299"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:outline-none transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  ⚖️ 產品重量 (公克) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  name="weight"
+                  value={formData.weight}
+                  onChange={handleInputChange}
+                  placeholder="例如：1000"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:outline-none transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  💪 每100克蛋白質含量 (公克) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  name="proteinPer100g"
+                  value={formData.proteinPer100g}
+                  onChange={handleInputChange}
+                  placeholder="例如：25"
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:outline-none transition"
+                />
+              </div>
+
+              <button
+                onClick={handleAddProduct}
+                className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-lg font-bold hover:from-indigo-700 hover:to-purple-700 transition shadow-lg hover:shadow-xl"
+              >
+                ✨ 加入比較 + 儲存到雲端
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 產品比較列表 */}
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <TrendingDown className="text-indigo-600" />
+            比較結果（依CP值排序）
+          </h2>
+
+          {products.length === 0 ? (
+            <div className="bg-white rounded-2xl shadow-lg p-12 text-center">
+              <div className="text-6xl mb-4">📊</div>
+              <p className="text-gray-400 text-lg mb-2">尚未新增任何產品</p>
+              <p className="text-gray-300 text-sm">請在上方表單新增產品開始比較</p>
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {products.map((product, index) => (
+                <div
+                  key={product.id}
+                  className="bg-white rounded-2xl shadow-lg overflow-hidden relative transform hover:scale-105 transition hover:shadow-xl"
+                >
+                  {getBestValueBadge(index)}
+
+                  <button
+                    onClick={() => handleDeleteProduct(product.id)}
+                    className="absolute top-2 left-2 bg-red-500 text-white p-2 rounded-full hover:bg-red-600 transition shadow-lg z-10"
+                  >
+                    <X size={16} />
+                  </button>
+
+                  {/* 產品圖片 */}
+                  <div className="h-48 bg-gradient-to-br from-gray-100 to-gray-200">
+                    {product.imagePreview ? (
+                      <img
+                        src={product.imagePreview}
+                        alt="Product"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Camera size={48} className="text-gray-400" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 產品資訊 */}
+                  <div className="p-5">
+                    <div className="mb-4 text-center bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-3">
+                      <div className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600 mb-1">
+                        ${product.pricePerGramProtein}
+                      </div>
+                      <div className="text-sm text-gray-600 font-medium">每克蛋白質價格</div>
+                    </div>
+
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between py-2 border-b">
+                        <span className="text-gray-600">💰 產品價格</span>
+                        <span className="font-semibold text-gray-800">${product.price}</span>
+                      </div>
+                      <div className="flex justify-between py-2 border-b">
+                        <span className="text-gray-600">⚖️ 產品重量</span>
+                        <span className="font-semibold text-gray-800">{product.weight}g</span>
+                      </div>
+                      <div className="flex justify-between py-2 border-b">
+                        <span className="text-gray-600">💪 蛋白質含量</span>
+                        <span className="font-semibold text-gray-800">{product.proteinPer100g}g/100g</span>
+                      </div>
+                      <div className="flex justify-between py-2 bg-indigo-50 rounded-lg px-2 mt-2">
+                        <span className="text-indigo-700 font-medium">📊 總蛋白質</span>
+                        <span className="font-bold text-indigo-600">{product.totalProtein}g</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
