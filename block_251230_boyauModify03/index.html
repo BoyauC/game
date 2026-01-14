@@ -67,6 +67,17 @@
       }
       loadingBar.style.display = "block";
 
+      // Detect device type (Tablet or PC)
+      const isTablet = /iPad|Android|Tablet/i.test(navigator.userAgent) || 
+                       (window.screen.width >= 768 && window.screen.width <= 1280 && 'ontouchstart' in window);
+      const isPC = !isTablet && !/Mobile|iPhone|iPod|Android/i.test(navigator.userAgent);
+
+      if (isTablet) {
+          console.log("This is a tablet.");
+      } else if (isPC) {
+          console.log("This is a PC.");
+      }
+
       var script = document.createElement("script");
       script.src = loaderUrl;
       script.onload = () => {
