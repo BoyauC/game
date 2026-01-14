@@ -93,6 +93,11 @@
         });
       };
       document.body.appendChild(script);
+
+      // Override Unity's mobile warning banner
+      window.unityShowBanner = function() {
+          console.log("Mobile warning suppressed.");
+      };
     </script>
   </body>
 </html>
