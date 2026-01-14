@@ -16,6 +16,9 @@
           <div id="unity-progress-bar-full"></div>
         </div>
       </div>
+      <div id="unity-mobile-warning">
+        WebGL builds are not supported on mobile devices.
+      </div>
       <div id="unity-footer">
         <div id="unity-webgl-logo"></div>
         <div id="unity-fullscreen-button"></div>
@@ -40,6 +43,7 @@
       var loadingBar = document.querySelector("#unity-loading-bar");
       var progressBarFull = document.querySelector("#unity-progress-bar-full");
       var fullscreenButton = document.querySelector("#unity-fullscreen-button");
+      var mobileWarning = document.querySelector("#unity-mobile-warning");
 
       // By default Unity keeps WebGL canvas render target size matched with
       // the DOM size of the canvas element (scaled by window.devicePixelRatio)
@@ -53,22 +57,15 @@
         // Avoid draining fillrate performance on mobile devices,
         // and default/override low DPI mode on mobile browsers.
         config.devicePixelRatio = 1;
+        mobileWarning.style.display = "block";
+        setTimeout(() => {
+          mobileWarning.style.display = "none";
+        }, 5000);
       } else {
         canvas.style.width = "960px";
         canvas.style.height = "600px";
       }
       loadingBar.style.display = "block";
-
-      // Detect device type (Tablet or PC)
-      const isTablet = /iPad|Android|Tablet/i.test(navigator.userAgent) || 
-                       (window.screen.width >= 768 && window.screen.width <= 1280 && 'ontouchstart' in window);
-      const isPC = !isTablet && !/Mobile|iPhone|iPod|Android/i.test(navigator.userAgent);
-
-      if (isTablet) {
-          console.log("This is a tablet.");
-      } else if (isPC) {
-          console.log("This is a PC.");
-      }
 
       var script = document.createElement("script");
       script.src = loaderUrl;
@@ -85,11 +82,6 @@
         });
       };
       document.body.appendChild(script);
-
-      // Override Unity's mobile warning banner
-      //window.unityShowBanner = function() {
-          console.log("Mobile warning suppressed.");
-      };
     </script>
   </body>
 </html>
